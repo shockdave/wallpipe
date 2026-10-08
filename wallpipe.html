@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0000AA">
+<title>Wall Pipe</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wall Pipe">
+<meta name="application-name" content="Wall Pipe">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAByElEQVR4AcSXjXHDIAxGZUZxRugsZJaMEK9iZvEIySouTzE5laJLzj/nXJ8Rn0CoCHNJiDHOZxIkf8a+F4/sdn3M2erXBIY0iAcLeD70rX5NgCBnoQlMP1E8SMzzoW/1B+poIaDt1/be/kAdLSxg+7W9t19LQNCzCNTRQiK2X9t7+0NKSeB+vwtg7wXnh4RpPcI8z4x5Q38r4zhqvPQc3i12i/PPANutaS4P+ltZQkmSqCatRz4DUWKc5XbrlZRiPhPrkOrTqjtDrB6Ecu0F0Q2tmuO2+vlnQK45p73Ioexfq+74rX7oDlBrFqT1ODSBNCz3QG6xW+SvZNyEXb4Fn0qMeYM+wH/1PrzaWf84dgficg/kNjkcmkCr7uyV1cP1yiuA/IJ+i/zNWeA16rtnq+bMtHrgDkK8XC4CLIJmwX8UgdqwaIGF0Cxoa7Axik2cYtPqGbA1qW0mrIVYzKX10ARsTWqbAGshFnNpPTQBBn2i6zrpuk44oN5YfAXG/D3eKP/RBKiFB1Mej4dY0FrYMdhljBcb/avfBSVQs+V1aTpeYl17VKuFujYMqDVezz7/gIVpmhjSBF+BOeRWx2Ki1bQEiEfxKe4vAAAA///bMyFWAAAABklEQVQDAK2fDtIJcssNAAAAAElFTkSuQmCC">
+<!--PWA-->
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}
+  body{display:flex;align-items:center;justify-content:center;height:100vh;height:100dvh;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box;}
+  canvas{display:block;touch-action:none;image-rendering:pixelated;image-rendering:crisp-edges;}
+  #ini{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:5;}
+  #ini .box{background:#0000AA;border:4px solid #55FFFF;box-shadow:0 0 0 4px #000,8px 8px 0 4px #000;padding:18px 22px;color:#FFFF55;
+    font:bold 18px "Courier New",monospace;text-align:center;}
+  #ini input{font:bold 32px "Courier New",monospace;width:4.2ch;text-align:center;text-transform:uppercase;background:#000;color:#55FFFF;
+    border:3px solid #AAAAAA;margin:12px 0;padding:4px;outline:none;}
+  #ini button{font:bold 18px "Courier New",monospace;background:#AAAAAA;color:#000;border:3px outset #fff;padding:6px 18px;cursor:pointer;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ini"><form class="box" id="iniForm" autocomplete="off">
+  <div>NEW HIGH SCORE!</div><div style="color:#fff;font-size:15px;margin-top:6px">Enter your initials</div>
+  <input id="iniInput" maxlength="3" autocapitalize="characters" spellcheck="false" inputmode="text"><br>
+  <button type="submit">OK</button>
+</form></div>
+<script>
+"use strict";
+(function(){
+// ---------- constants ----------
+const W=400,H=600,COLS=9,ROWS=9,CS=40,BX=20,BY=116;
+const DX=[0,1,0,-1],DY=[-1,0,1,0]; // N E S W
+const opp=d=>(d+2)&3;
+const PIECES={H:10,V:5,NE:3,NW:9,SE:6,SW:12,X:15};
+const BAG=['H','H','H','V','V','V','NE','NE','NW','NW','SE','SE','SW','SW','X'];
+const C={black:'#000000',blue:'#0000AA',green:'#00AA00',cyan:'#00AAAA',red:'#AA0000',magenta:'#AA00AA',brown:'#AA5500',
+  lgray:'#AAAAAA',dgray:'#555555',lblue:'#5555FF',lgreen:'#55FF55',lcyan:'#55FFFF',lred:'#FF5555',lmag:'#FF55FF',yellow:'#FFFF55',white:'#FFFFFF'};
+const FONT='"Courier New",Courier,monospace';
+const HS_KEY='wallpipe.hiscores.v1', MUTE_KEY='wallpipe.muted';
+
+// ---------- storage ----------
+function lsGet(k,def){try{const v=localStorage.getItem(k);return v==null?def:JSON.parse(v);}catch(e){return def;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+let hiscores=lsGet(HS_KEY,null);
+if(!Array.isArray(hiscores)) hiscores=[{n:'SOL',s:5000,l:4},{n:'EAU',s:3000,l:3},{n:'H2O',s:2000,l:2},{n:'TAP',s:1000,l:2},{n:'DRP',s:500,l:1}];
+
+// ---------- audio ----------
+let actx=null, muted=!!lsGet(MUTE_KEY,false);
+function ensureAudio(){
+  if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){actx=null;}}
+  if(actx&&actx.state==='suspended'){try{actx.resume();}catch(e){}}
+}
+function beep(f,d=0.08,type='square',vol=0.05,slide=0,delay=0){
+  if(muted||!actx) return;
+  try{
+    const t=actx.currentTime+delay, o=actx.createOscillator(), g=actx.createGain();
+    o.type=type; o.frequency.setValueAtTime(f,t);
+    if(slide) o.frequency.linearRampToValueAtTime(Math.max(20,f+slide),t+d);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+d+0.02);
+  }catch(e){}
+}
+const SFX={
+  place:()=>beep(660,0.05),
+  replace:()=>{beep(220,0.12,'sawtooth',0.05,-120);},
+  bad:()=>beep(110,0.15,'square',0.05),
+  tick:()=>beep(1000,0.03,'square',0.03),
+  start:()=>{beep(440,0.1);beep(660,0.1,'square',0.05,0,0.1);beep(880,0.15,'square',0.05,0,0.2);},
+  fill:n=>beep(300+(n%12)*40,0.06,'triangle',0.06),
+  loop:()=>{for(let i=0;i<4;i++)beep(800+i*200,0.07,'square',0.04,0,i*0.07);},
+  bonus:()=>{for(let i=0;i<3;i++)beep(523*(1+i*0.25),0.09,'square',0.04,0,i*0.09);},
+  leak:()=>{beep(400,0.5,'sawtooth',0.05,-330);beep(90,0.4,'square',0.04,0,0.1);},
+  win:()=>{[523,659,784,1046].forEach((f,i)=>beep(f,0.14,'square',0.05,0,i*0.13));},
+  lose:()=>{[392,330,262,196].forEach((f,i)=>beep(f,0.22,'triangle',0.07,0,i*0.2));},
+  click:()=>beep(520,0.04,'square',0.04)
+};
+
+// ---------- canvas / scaling ----------
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let scale=1, wallCache=null;
+function resize(){
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const s=Math.min(vw/W,vh/H);
+  const cssW=Math.floor(W*s), cssH=Math.floor(H*s);
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  scale=cv.width/W;
+  wallCache=document.createElement('canvas'); wallCache.width=cv.width; wallCache.height=cv.height;
+  const w=wallCache.getContext('2d'); w.setTransform(scale,0,0,scale,0,0); w.imageSmoothingEnabled=false; drawWall(w);
+  // matching brick wallpaper around the game area (fills phone letterbox)
+  try{
+    const t=document.createElement('canvas'); t.width=192; t.height=96; const tg=t.getContext('2d'); tg.setTransform(4,0,0,4,0,0); drawWall(tg,48,24);
+    document.body.style.backgroundImage='url('+t.toDataURL()+')'; document.body.style.backgroundSize=(48*s)+'px '+(24*s)+'px';
+    document.body.style.backgroundColor='#555555';
+  }catch(e){}
+}
+window.addEventListener('resize',resize);
+window.addEventListener('orientationchange',()=>setTimeout(resize,200));
+
+function drawWall(g,ww,hh){
+  ww=ww||W; hh=hh||H;
+  g.fillStyle=C.dgray; g.fillRect(0,0,ww,hh);
+  const bw=24,bh=12;
+  for(let y=0,row=0;y<hh;y+=bh,row++){
+    const off=(row%2)?bw/2:0;
+    for(let x=-off;x<ww;x+=bw){
+      const v=((x*7+y*13)>>2)%5;
+      g.fillStyle=v===0?'#882200':(v===1?C.brown:C.red);
+      g.fillRect(x+1,y+1,bw-2,bh-2);
+      g.fillStyle='rgba(255,85,85,0.35)'; g.fillRect(x+1,y+1,bw-2,2);
+      g.fillStyle='rgba(0,0,0,0.3)'; g.fillRect(x+1,y+bh-3,bw-2,2);
+    }
+  }
+}
+
+// ---------- game state ----------
+const S={mode:'title',level:1,score:0,grid:null,queue:[],well:null,drain:null,countdown:30,cdMax:30,cellTime:2.6,
+  flowing:false,fast:false,flow:null,filled:0,required:8,paused:false,floats:[],cool:0,result:null,hover:null,
+  leak:null,endTimer:-1,t:0,lastTick:0,fillCount:0,drainHit:false,flash:0,newHi:-1,blink:0};
+
+function rnd(n){return Math.floor(Math.random()*n);}
+function randPiece(){return BAG[rnd(BAG.length)];}
+function inB(c,r){return c>=0&&r>=0&&c<COLS&&r<ROWS;}
+function key(c,r){return c+','+r;}
+
+function openings(cell){
+  if(!cell) return 0;
+  switch(cell.t){
+    case 'WELL': return 1<<cell.out;
+    case 'DRAIN': return 1<<cell.inn;
+    case 'SINK': case 'TUB': return cell.o==='H'?10:5;
+    case 'BRICK': return 0;
+    default: return PIECES[cell.t]||0;
+  }
+}
+function isPipe(cell){return cell&&PIECES[cell.t]!==undefined;}
+function hasWater(cell){ if(!cell) return false; return cell.t==='X'?!!(cell.h||cell.v):!!cell.w; }
+
+function setupLevel(){
+  const L=S.level;
+  S.cdMax=Math.max(12,30-(L-1)*2); S.countdown=S.cdMax; S.lastTick=Math.ceil(S.countdown);
+  S.cellTime=Math.max(0.7,2.6-(L-1)*0.2);
+  S.required=Math.min(28,8+(L-1)*2);
+  S.flowing=false; S.fast=false; S.flow=null; S.filled=0; S.fillCount=0; S.floats=[]; S.cool=0; S.result=null;
+  S.leak=null; S.endTimer=-1; S.drainHit=false; S.paused=false; S.flash=0;
+  const g=[]; for(let r=0;r<ROWS;r++){g.push(new Array(COLS).fill(null));}
+  S.grid=g;
+  const reserved=new Set();
+  // well
+  let wc,wr,out;
+  for(let i=0;i<500;i++){
+    wc=1+rnd(COLS-2); wr=1+rnd(ROWS-2); out=rnd(4);
+    const nc=wc+DX[out], nr=wr+DY[out];
+    // leave room: at least 2 cells in outlet direction
+    if(inB(nc,nr)&&inB(nc+DX[out],nr+DY[out])) break;
+  }
+  g[wr][wc]={t:'WELL',out,fixed:true,w:null};
+  S.well={c:wc,r:wr};
+  reserved.add(key(wc,wr)); reserved.add(key(wc+DX[out],wr+DY[out]));
+  for(let d=0;d<4;d++) reserved.add(key(wc+DX[d],wr+DY[d]));
+  function free(pred){
+    for(let i=0;i<400;i++){
+      const c=rnd(COLS),r=rnd(ROWS);
+      if(g[r][c]||reserved.has(key(c,r))) continue;
+      if(pred&&!pred(c,r)) continue;
+      return {c,r};
+    }
+    return null;
+  }
+  S.drain=null;
+  if(L>=3&&L%2===1){
+    const p=free((c,r)=>Math.abs(c-wc)+Math.abs(r-wr)>=5);
+    if(p){
+      const ds=[0,1,2,3].filter(d=>inB(p.c+DX[d],p.r+DY[d])&&!g[p.r+DY[d]][p.c+DX[d]]);
+      const inn=ds[rnd(ds.length)];
+      g[p.r][p.c]={t:'DRAIN',inn,fixed:true,w:null}; S.drain=p;
+      reserved.add(key(p.c,p.r)); reserved.add(key(p.c+DX[inn],p.r+DY[inn]));
+    }
+  }
+  const interior=(c,r)=>c>0&&r>0&&c<COLS-1&&r<ROWS-1;
+  const nSinks=L>=2?(L>=5?2:1):0, nTubs=L>=4?(L>=7?2:1):0;
+  for(let i=0;i<nSinks;i++){const p=free(interior); if(p){g[p.r][p.c]={t:'SINK',o:Math.random()<0.5?'H':'V',fixed:true,w:null}; reserved.add(key(p.c,p.r));}}
+  for(let i=0;i<nTubs;i++){const p=free(interior); if(p){g[p.r][p.c]={t:'TUB',o:Math.random()<0.5?'H':'V',fixed:true,w:null}; reserved.add(key(p.c,p.r));}}
+  // keep cells adjacent to openings of specials free of bricks
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const cl=g[r][c]; if(cl){const m=openings(cl); for(let d=0;d<4;d++) if(m&(1<<d)) reserved.add(key(c+DX[d],r+DY[d]));}}
+  const nBricks=L>=3?Math.min(16,(L-2)*2+1):0;
+  for(let i=0;i<nBricks;i++){const p=free(); if(p) g[p.r][p.c]={t:'BRICK',fixed:true};}
+  S.queue=[]; for(let i=0;i<4;i++) S.queue.push(randPiece());
+}
+
+function startGame(){ S.level=1; S.score=0; setupLevel(); S.mode='intro'; }
+
+function startFlow(){
+  if(S.flowing) return;
+  S.flowing=true; S.countdown=0;
+  const wcell=S.grid[S.well.r][S.well.c];
+  wcell.w={entry:-1,p:0};
+  S.flow={c:S.well.c,r:S.well.r,ch:wcell.w};
+  SFX.start();
+}
+
+function cellMult(cell){
+  if(!cell) return 1;
+  if(cell.t==='SINK') return 3; if(cell.t==='TUB') return 5; if(cell.t==='WELL') return 0.6; if(cell.t==='DRAIN') return 1.2;
+  return 1;
+}
+function exitDir(cell,entry){
+  if(cell.t==='WELL') return cell.out;
+  if(cell.t==='X') return opp(entry);
+  const m=openings(cell)&~(1<<entry);
+  for(let d=0;d<4;d++) if(m&(1<<d)) return d;
+  return -1;
+}
+function cellCenter(c,r){return {x:BX+c*CS+CS/2,y:BY+r*CS+CS/2};}
+function addFloat(c,r,text,color){const p=cellCenter(c,r); S.floats.push({x:p.x,y:p.y-6,text,color:color||C.yellow,t:0});}
+function addScore(n){S.score=Math.max(0,S.score+n);}
+
+function onFilled(cell,f){
+  const mult=S.fast?2:1;
+  if(isPipe(cell)){
+    S.filled++; let pts=50*mult;
+    if(cell.t==='X'&&f.loop){pts+=500; addFloat(f.c,f.r,'LOOP +500',C.lmag); SFX.loop();}
+    else addFloat(f.c,f.r,'+'+pts,C.white);
+    addScore(pts); SFX.fill(S.fillCount++);
+  }else if(cell.t==='SINK'||cell.t==='TUB'){
+    S.filled++; const pts=(cell.t==='SINK'?300:600)*mult;
+    addScore(pts); addFloat(f.c,f.r,cell.t+' +'+pts,C.lcyan); SFX.bonus();
+  }
+}
+
+function advance(dt){
+  let f=S.flow, cell=S.grid[f.r][f.c];
+  const ct=()=>S.fast?0.07:S.cellTime;
+  f.ch.p+=dt/(ct()*cellMult(cell));
+  let guard=0;
+  while(f.ch.p>=1&&guard++<50){
+    const over=(f.ch.p-1)*ct()*cellMult(cell);
+    f.ch.p=1; onFilled(cell,f);
+    if(cell.t==='DRAIN'){
+      S.drainHit=true; S.flowing=false; addScore(2000); addFloat(f.c,f.r,'DRAIN +2000',C.lgreen); SFX.win();
+      S.endTimer=1.4; return;
+    }
+    const ex=exitDir(cell,f.ch.entry);
+    const nc=f.c+DX[ex], nr=f.r+DY[ex], side=opp(ex);
+    const nx=inB(nc,nr)?S.grid[nr][nc]:null;
+    let ok=nx&&(openings(nx)&(1<<side));
+    let ch=null, loop=false;
+    if(ok){
+      if(nx.t==='X'){
+        const k=(side===1||side===3)?'h':'v', o=k==='h'?'v':'h';
+        if(nx[k]) ok=false; else {nx[k]={entry:side,p:0}; ch=nx[k]; loop=!!(nx[o]&&nx[o].p>=1);}
+      }else if(nx.t==='WELL'){ok=false;}
+      else { if(nx.w) ok=false; else {nx.w={entry:side,p:0}; ch=nx.w;} }
+    }
+    if(!ok){
+      const p=cellCenter(f.c,f.r);
+      S.leak={x:p.x+DX[ex]*CS/2,y:p.y+DY[ex]*CS/2,dir:ex,t:0};
+      S.flowing=false; S.endTimer=1.6; SFX.leak(); S.flash=0.3; return;
+    }
+    S.flow=f={c:nc,r:nr,ch,loop}; cell=nx;
+    f.ch.p=over/(ct()*cellMult(cell));
+  }
+}
+
+function roundEnd(){
+  let unused=0;
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const cl=S.grid[r][c]; if(cl&&cl.player&&!hasWater(cl)) unused++;}
+  const pen=unused*50; addScore(-pen);
+  const passed=S.filled>=S.required;
+  S.result={unused,pen,passed,filled:S.filled,required:S.required,drain:S.drainHit};
+  S.mode='tally'; S.flowing=false;
+  passed?SFX.win():SFX.lose();
+}
+
+function gameOver(){
+  S.mode='gameover';
+  const qual=hiscores.length<10||S.score>hiscores[hiscores.length-1].s;
+  if(qual&&S.score>0){ showInitials(); }
+}
+
+// ---------- initials ----------
+const iniDiv=document.getElementById('ini'), iniInput=document.getElementById('iniInput');
+function showInitials(){iniDiv.style.display='flex'; iniInput.value=''; setTimeout(()=>{try{iniInput.focus();}catch(e){}},50);}
+document.getElementById('iniForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const n=(iniInput.value.toUpperCase().replace(/[^A-Z0-9]/g,'')+'???').slice(0,3);
+  hiscores.push({n,s:S.score,l:S.level}); hiscores.sort((a,b)=>b.s-a.s); hiscores=hiscores.slice(0,10);
+  S.newHi=hiscores.findIndex(h=>h.n===n&&h.s===S.score);
+  lsSet(HS_KEY,hiscores); iniDiv.style.display='none'; iniInput.blur(); S.mode='scores'; SFX.bonus();
+});
+
+// ---------- input ----------
+const BTN={
+  flow:{x:14,y:488,w:120,h:44,label:'FLOW (F)'},
+  pause:{x:140,y:488,w:120,h:44,label:'PAUSE (P)'},
+  mute:{x:266,y:488,w:120,h:44,label:'SOUND (M)'},
+  start:{x:100,y:452,w:200,h:48,label:'START'},
+  scores:{x:100,y:510,w:200,h:40,label:'HIGH SCORES'}
+};
+function hit(b,x,y){return x>=b.x&&y>=b.y&&x<b.x+b.w&&y<b.y+b.h;}
+function toLogical(e){const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H};}
+function boardCell(x,y){const c=Math.floor((x-BX)/CS), r=Math.floor((y-BY)/CS); return inB(c,r)?{c,r}:null;}
+
+function toggleMute(){muted=!muted; lsSet(MUTE_KEY,muted); if(!muted){ensureAudio(); SFX.click();}}
+function togglePause(){ if(S.mode!=='play') return; S.paused=!S.paused; SFX.click(); }
+function flowNow(){
+  if(S.mode!=='play'||S.paused) return;
+  if(!S.flowing&&S.endTimer<0){ addScore(0); startFlow(); }
+  if(S.flowing&&!S.fast){ S.fast=true; SFX.click(); }
+}
+function proceed(){
+  if(S.mode==='title'){startGame(); SFX.click();}
+  else if(S.mode==='intro'){S.mode='play'; SFX.click();}
+  else if(S.mode==='tally'){ if(S.result.passed){S.level++; setupLevel(); S.mode='intro';} else gameOver(); SFX.click(); }
+  else if(S.mode==='gameover'){ if(iniDiv.style.display!=='flex'){S.mode='scores'; S.newHi=-1;} }
+  else if(S.mode==='scores'){S.mode='title'; S.newHi=-1; SFX.click();}
+}
+function place(c,r){
+  const cell=S.grid[r][c];
+  if(cell&&(cell.fixed||hasWater(cell))){SFX.bad(); return;}
+  if(S.cool>0) return;
+  const piece=S.queue.shift(); S.queue.push(randPiece());
+  if(cell){ addScore(-50); addFloat(c,r,'-50',C.lred); S.cool=0.35; SFX.replace(); }
+  else SFX.place();
+  S.grid[r][c]=piece==='X'?{t:'X',player:true,h:null,v:null}:{t:piece,player:true,w:null};
+}
+function onDown(e){
+  e.preventDefault(); ensureAudio();
+  if(iniDiv.style.display==='flex') return;
+  const {x,y}=toLogical(e);
+  if(S.mode==='play'){
+    if(hit(BTN.mute,x,y)) return toggleMute();
+    if(hit(BTN.pause,x,y)) return togglePause();
+    if(S.paused){ S.paused=false; return; }
+    if(hit(BTN.flow,x,y)) return flowNow();
+    if(S.endTimer>=0) return;
+    const b=boardCell(x,y); if(b) place(b.c,b.r);
+    return;
+  }
+  if(S.mode==='title'){
+    if(hit(BTN.scores,x,y)){S.mode='scores'; SFX.click(); return;}
+    if(hit(BTN.mute,x,y)) return toggleMute();
+    return proceed();
+  }
+  proceed();
+}
+cv.addEventListener('pointerdown',onDown);
+cv.addEventListener('pointermove',e=>{ if(e.pointerType==='mouse'){const p=toLogical(e); S.hover=boardCell(p.x,p.y);} });
+cv.addEventListener('pointerleave',()=>{S.hover=null;});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('keydown',e=>{
+  if(iniDiv.style.display==='flex') return;
+  ensureAudio();
+  const k=e.key.toLowerCase();
+  if(k==='m') toggleMute();
+  else if(k==='p'||k==='escape') togglePause();
+  else if(k==='f') flowNow();
+  else if(k==='h'&&S.mode==='title'){S.mode='scores';}
+  else if(k==='enter'||k===' '){ if(S.mode==='play'){ if(S.paused) S.paused=false; } else proceed(); e.preventDefault(); }
+});
+document.addEventListener('visibilitychange',()=>{ if(document.hidden&&S.mode==='play'&&S.endTimer<0) S.paused=true; });
+
+// ---------- drawing helpers ----------
+function rect(x,y,w,h,col){ctx.fillStyle=col; ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
+function text(s,x,y,col,size,align,bold){
+  ctx.font=(bold===false?'':'bold ')+(size||14)+'px '+FONT; ctx.textAlign=align||'left'; ctx.textBaseline='middle';
+  ctx.fillStyle='#000'; ctx.fillText(s,x+1.5,y+1.5); ctx.fillStyle=col||C.white; ctx.fillText(s,x,y);
+}
+function panel(x,y,w,h,bg,border){
+  rect(x+4,y+4,w,h,'rgba(0,0,0,0.6)');
+  rect(x,y,w,h,border||C.lcyan); rect(x+2,y+2,w-4,h-4,C.black); rect(x+4,y+4,w-8,h-8,bg||C.blue);
+}
+function button(b,label,active){
+  rect(b.x+3,b.y+3,b.w,b.h,'rgba(0,0,0,0.6)');
+  rect(b.x,b.y,b.w,b.h,C.white); rect(b.x+2,b.y+2,b.w-2,b.h-2,C.dgray); rect(b.x+2,b.y+2,b.w-4,b.h-4,active?C.yellow:C.lgray);
+  text(label||b.label,b.x+b.w/2,b.y+b.h/2+1,C.black,15,'center');
+}
+// arm geometry: from/to are fractions along arm (0=center,1=edge)
+function armRect(cx,cy,s,d,hw,from,to,col){
+  const L=s/2; if(to<=from) return;
+  if(d===0) rect(cx-hw,cy-to*L,hw*2,(to-from)*L,col);
+  else if(d===2) rect(cx-hw,cy+from*L,hw*2,(to-from)*L,col);
+  else if(d===1) rect(cx+from*L,cy-hw,(to-from)*L,hw*2,col);
+  else rect(cx-to*L,cy-hw,(to-from)*L,hw*2,col);
+}
+function pipeShell(cx,cy,s,mask,from){
+  from=from||0;
+  const o=s*0.3, i=s*0.23, hl=s*0.06;
+  for(let d=0;d<4;d++) if(mask&(1<<d)) armRect(cx,cy,s,d,o,from,1,C.black);
+  if(from===0) rect(cx-o,cy-o,o*2,o*2,C.black);
+  for(let d=0;d<4;d++) if(mask&(1<<d)){
+    armRect(cx,cy,s,d,i,from,0.999,C.lgray);
+    // flange
+    armRect(cx,cy,s,d,o,0.82,0.98,C.dgray); armRect(cx,cy,s,d,o-2,0.84,0.96,C.lgray);
+  }
+  if(from===0) rect(cx-i,cy-i,i*2,i*2,C.lgray);
+  // inner channel (empty = dark)
+  const wc=s*0.15;
+  for(let d=0;d<4;d++) if(mask&(1<<d)) armRect(cx,cy,s,d,wc,from,0.999,'#1a1a1a');
+  if(from===0) rect(cx-wc,cy-wc,wc*2,wc*2,'#1a1a1a');
+  void hl;
+}
+function waterChannel(cx,cy,s,mask,ch,crossCenter){
+  if(!ch) return;
+  const wc=s*0.15, p=ch.p;
+  const e=ch.entry, x=crossCenter?opp(e):(mask&~(1<<e));
+  let exit=-1; if(crossCenter) exit=x; else for(let d=0;d<4;d++) if(x&(1<<d)) exit=d;
+  const a1=Math.min(1,p*2), a2=Math.max(0,p*2-1);
+  armRect(cx,cy,s,e,wc,1-a1,1,C.lblue);
+  if(p>=0.5) rect(cx-wc,cy-wc,wc*2,wc*2,C.lblue);
+  if(exit>=0) armRect(cx,cy,s,exit,wc,0,a2,C.lblue);
+  // shimmer
+  const sh=Math.max(2,Math.round(s*0.06));
+  if(e===1||e===3) armRect(cx,cy,s,e,sh/2,1-a1,1,C.lcyan); 
+  if(exit===1||exit===3) armRect(cx,cy,s,exit,sh/2,0,a2,C.lcyan);
+  if(e===0||e===2) armRect(cx-wc/2,cy,s,e,sh/2,1-a1,1,C.lcyan);
+  if(exit===0||exit===2) armRect(cx-wc/2,cy,s,exit,sh/2,0,a2,C.lcyan);
+}
+function drawPiece(t,x,y,s,cell){
+  const cx=x+s/2, cy=y+s/2;
+  const mask=PIECES[t];
+  pipeShell(cx,cy,s,mask);
+  if(cell){
+    if(t==='X'){ waterChannel(cx,cy,s,mask,cell.h,true); waterChannel(cx,cy,s,mask,cell.v,true); }
+    else waterChannel(cx,cy,s,mask,cell.w,false);
+  }
+}
+function tile(x,y,s){
+  rect(x,y,s,s,'#000000'); rect(x+1,y+1,s-1,s-1,'#2a2a3a');
+  rect(x+1,y+1,s-1,1,'#3a3a50'); rect(x+1,y+Math.floor(s/2),s-1,1,'#20202c'); rect(x+Math.floor(s/2),y+1,1,Math.floor(s/2),'#20202c');
+}
+function drawBrick(x,y,s){
+  rect(x,y,s,s,'#000'); rect(x+1,y+1,s-2,s-2,C.dgray);
+  const bh=(s-2)/4;
+  for(let i=0;i<4;i++){
+    const off=(i%2)?(s-2)/4:0;
+    for(let bx=-off;bx<s-2;bx+=(s-2)/2){
+      const x0=Math.max(0,bx)+1, x1=Math.min(s-2,bx+(s-2)/2-1)+1;
+      rect(x+x0,y+1+i*bh,x1-x0,bh-1,i%2?C.red:'#BB2200');
+      rect(x+x0,y+1+i*bh,x1-x0,1,C.lred);
+    }
+  }
+}
+function drawWell(cell,x,y,s){
+  const cx=x+s/2, cy=y+s/2;
+  const r=s*0.34;
+  // stone ring (chunky octagon)
+  rect(cx-r*0.6,cy-r,r*1.2,r*2,C.black); rect(cx-r,cy-r*0.6,r*2,r*1.2,C.black);
+  rect(cx-r*0.8,cy-r*0.8,r*1.6,r*1.6,C.black);
+  const q=r-2;
+  rect(cx-q*0.6,cy-q,q*1.2,q*2,C.dgray); rect(cx-q,cy-q*0.6,q*2,q*1.2,C.dgray);
+  rect(cx-q*0.8,cy-q*0.8,q*1.6,q*1.6,C.dgray);
+  rect(cx-q*0.5,cy-q+1,q*0.4,2,C.lgray); rect(cx+q*0.2,cy+q-3,q*0.4,2,C.lgray); rect(cx-q+1,cy-2,2,q*0.4,C.lgray);
+  const ir=r*0.6;
+  rect(cx-ir,cy-ir,ir*2,ir*2,C.black);
+  let lvl=S.flowing||cell.w?1:Math.max(0.2,1-S.countdown/S.cdMax);
+  if(S.mode!=='play'&&!cell.w) lvl=0.5;
+  const wh=ir*2*lvl;
+  rect(cx-ir,cy+ir-wh,ir*2,wh,C.lblue);
+  if(lvl>0.1) rect(cx-ir+2,cy+ir-wh+1,ir,2,C.lcyan);
+  // outlet pipe stub, drawn on top of the ring
+  pipeShell(cx,cy,s,1<<cell.out,0.62);
+  const wc=s*0.15;
+  if(cell.w){ armRect(cx,cy,s,cell.out,wc,0.62,0.62+0.38*Math.min(1,cell.w.p),C.lblue); }
+  else if(Math.floor(S.t*3)%2===0){ // blinking arrow showing where water exits
+    const ax=cx+DX[cell.out]*s*0.38, ay=cy+DY[cell.out]*s*0.38;
+    for(let k=0;k<3;k++){ const w=(3-k)*2; const px=ax+DX[cell.out]*k*2, py=ay+DY[cell.out]*k*2;
+      if(DX[cell.out]) rect(px-1,py-w/2,2,w,C.yellow); else rect(px-w/2,py-1,w,2,C.yellow); }
+  }
+}
+function drawBasin(cell,x,y,s,isTub){
+  const cx=x+s/2, cy=y+s/2, m=cell.o==='H'?10:5;
+  pipeShell(cx,cy,s,m,isTub?0.75:0.55);
+  const hor=cell.o==='H';
+  let bw,bh;
+  if(isTub){ bw=hor?s*0.8:s*0.6; bh=hor?s*0.6:s*0.8; } else { bw=s*0.56; bh=s*0.56; }
+  const bx=cx-bw/2, by=cy-bh/2;
+  if(isTub){ rect(bx+2,by+bh-2,4,5,C.yellow); rect(bx+bw-6,by+bh-2,4,5,C.yellow); }
+  rect(bx,by,bw,bh,C.black); rect(bx+1,by+1,bw-2,bh-2,C.white);
+  rect(bx+1,by+bh-4,bw-2,3,C.lgray);
+  const ix=bx+4, iy=by+4, iw=bw-8, ih=bh-8;
+  rect(ix,iy,iw,ih,isTub?C.lgray:'#c8c8c8'); rect(ix,iy,iw,2,C.dgray);
+  // drain hole/tap
+  rect(cx-1,by-3,3,4,C.yellow);
+  let p=0;
+  if(cell.w){
+    const ent=cell.w.entry;
+    // entry arm water
+    const wc=s*0.15, a=Math.min(1,cell.w.p*6);
+    armRect(cx,cy,s,ent,wc,1-0.5*a,1,C.lblue);
+    p=Math.min(1,Math.max(0,(cell.w.p-0.1)/0.8));
+    const fh=ih*p; rect(ix,iy+ih-fh,iw,fh,C.lblue); if(p>0.05) rect(ix+1,iy+ih-fh,iw-2,1,C.lcyan);
+    if(cell.w.p>=0.9){ const ex=opp(ent); armRect(cx,cy,s,ex,wc,0.5,0.5+0.5*Math.min(1,(cell.w.p-0.9)*10),C.lblue); }
+  }
+}
+function drawDrain(cell,x,y,s){
+  const cx=x+s/2, cy=y+s/2;
+  pipeShell(cx,cy,s,1<<cell.inn,0.35);
+  const r=s*0.34;
+  rect(cx-r,cy-r,r*2,r*2,C.black); rect(cx-r+2,cy-r+2,r*2-4,r*2-4,C.green);
+  rect(cx-r+4,cy-r+4,r*2-8,r*2-8,C.black);
+  const full=cell.w?cell.w.p:0;
+  if(full>0){ const ir=(r-4)*full; rect(cx-ir,cy-ir,ir*2,ir*2,C.lblue); const wc=s*0.15; armRect(cx,cy,s,cell.inn,wc,0.3,1,C.lblue);}
+  for(let i=-2;i<=2;i++) rect(cx+i*r*0.35-1,cy-r+4,2,r*2-8,C.lgray);
+  if(S.mode==='play'&&!cell.w&&Math.floor(S.t*2)%2===0) text('OUT',cx,cy+r+2,C.lgreen,9,'center');
+}
+function drawCell(cell,c,r){
+  const x=BX+c*CS, y=BY+r*CS;
+  tile(x,y,CS);
+  if(!cell) return;
+  switch(cell.t){
+    case 'BRICK': drawBrick(x,y,CS); break;
+    case 'WELL': drawWell(cell,x,y,CS); break;
+    case 'SINK': drawBasin(cell,x,y,CS,false); break;
+    case 'TUB': drawBasin(cell,x,y,CS,true); break;
+    case 'DRAIN': drawDrain(cell,x,y,CS); break;
+    default: drawPiece(cell.t,x,y,CS,cell);
+  }
+}
+
+// pixel title font
+const GLYPH={
+ W:['10001','10001','10001','10101','10101','11011','10001'],
+ A:['01110','10001','10001','11111','10001','10001','10001'],
+ L:['10000','10000','10000','10000','10000','10000','11111'],
+ P:['11110','10001','10001','11110','10000','10000','10000'],
+ I:['11111','00100','00100','00100','00100','00100','11111'],
+ E:['11111','10000','10000','11110','10000','10000','11111'],
+ ' ':['00000','00000','00000','00000','00000','00000','00000']
+};
+function pixelText(str,x,y,b,c1,c2){
+  for(let k=0;k<str.length;k++){
+    const g=GLYPH[str[k]]; if(!g) continue;
+    for(let r=0;r<7;r++)for(let c=0;c<5;c++) if(g[r][c]==='1'){
+      const px=x+(k*6+c)*b, py=y+r*b;
+      rect(px+3,py+3,b,b,C.black);
+      rect(px,py,b,b,r<3?c1:c2); rect(px,py,b,1,C.white);
+    }
+  }
+}
+
+// ---------- screens ----------
+function drawHUD(){
+  panel(6,4,388,40,C.blue);
+  text('LV '+S.level,16,24,C.yellow,16);
+  text('SCORE '+String(S.score).padStart(6,'0'),88,24,C.white,16);
+  const hi=Math.max(S.score,hiscores.length?hiscores[0].s:0);
+  text('HI '+String(hi).padStart(6,'0'),384,24,C.lcyan,16,'right');
+}
+function drawQueue(){
+  panel(6,50,240,62,C.blue);
+  text('NOW',14,60,C.yellow,10);
+  rect(14,66,42,42,C.yellow); rect(16,68,38,38,C.black); tile(16,68,38);
+  drawPiece(S.queue[0],16,68,38,null);
+  text('NEXT \u25C0',66,60,C.lcyan,10);
+  for(let i=1;i<4;i++){
+    const x=66+(i-1)*58;
+    rect(x,72,32,32,C.lgray); rect(x+1,73,30,30,C.black); tile(x+1,73,30);
+    drawPiece(S.queue[i],x+1,73,30,null);
+  }
+  panel(252,50,142,62,S.flowing?C.cyan:C.blue);
+  if(!S.flow){
+    text('WATER IN',264,62,C.white,12);
+    const t=Math.ceil(S.countdown);
+    text(String(t).padStart(2,'0'),264,88,t<=5&&Math.floor(S.t*4)%2?C.lred:C.yellow,24);
+    const frac=S.countdown/S.cdMax; rect(304,84,80,8,C.black); rect(305,85,78*frac,6,t<=5?C.lred:C.lgreen);
+  } else {
+    text(S.mode==='play'?(S.endTimer>=0?'STOPPED':(S.fast?'FAST FLOW!':'FLOWING')):'ROUND OVER',264,62,S.fast&&S.flowing?C.yellow:C.white,12);
+  }
+  const left=Math.max(0,S.required-S.filled);
+  text(left>0?('PIPES LEFT '+left):'GOAL MET!',264,104,left>0?C.white:C.lgreen,11);
+  if(S.flow){ text(S.filled+'/'+S.required,264,84,C.yellow,18); }
+}
+function drawBoard(){
+  rect(BX-4,BY-4,COLS*CS+8,ROWS*CS+8,C.black);
+  rect(BX-3,BY-3,COLS*CS+6,ROWS*CS+6,C.lgray);
+  rect(BX-1,BY-1,COLS*CS+2,ROWS*CS+2,C.black);
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) drawCell(S.grid[r][c],c,r);
+  // hover ghost
+  if(S.mode==='play'&&S.hover&&!S.paused&&S.endTimer<0){
+    const {c,r}=S.hover, cell=S.grid[r][c];
+    const ok=!(cell&&(cell.fixed||hasWater(cell)));
+    ctx.globalAlpha=0.55; if(ok) drawPiece(S.queue[0],BX+c*CS,BY+r*CS,CS,null); ctx.globalAlpha=1;
+    ctx.strokeStyle=ok?(cell?C.lred:C.yellow):C.red; ctx.lineWidth=2; ctx.strokeRect(BX+c*CS+1,BY+r*CS+1,CS-2,CS-2);
+  }
+  // leak splash
+  if(S.leak){
+    const L=S.leak; L.t+=0;
+    for(let i=0;i<10;i++){
+      const a=(i/10)*Math.PI*2+(i*1.7), sp=10+((i*37)%14);
+      const t=Math.min(1,L.t*1.5);
+      const px=L.x+Math.cos(a)*sp*t+DX[L.dir]*t*10, py=L.y+Math.sin(a)*sp*t+DY[L.dir]*t*10+t*t*8;
+      rect(px-2,py-2,4,4,i%2?C.lblue:C.lcyan);
+    }
+    rect(L.x-6,L.y-3,12,6,C.lblue);
+  }
+  // floats
+  for(const f of S.floats){ ctx.globalAlpha=Math.max(0,1-f.t); text(f.text,f.x,f.y-f.t*24,f.color,12,'center'); ctx.globalAlpha=1; }
+}
+function drawButtons(){
+  button(BTN.flow,S.flowing&&!S.fast?'FLOW! (F)':(S.flowing?'FAST':'FLOW (F)'),S.fast);
+  button(BTN.pause,S.paused?'RESUME':'PAUSE (P)',S.paused);
+  button(BTN.mute,muted?'SOUND OFF':'SOUND ON',false);
+  panel(6,540,388,52,C.black,C.dgray);
+  let msg;
+  if(S.endTimer>=0) msg=S.drainHit?'Into the drain! Nice plumbing.':'SPLASH! The water leaked out.';
+  else if(!S.flowing) msg='Tap the wall to lay pipe from the well.';
+  else msg='Keep laying pipe ahead of the water!';
+  text(msg,200,560,C.lgreen,12,'center');
+  text('Tap a dry pipe to replace it (-50)',200,578,C.lgray,11,'center',false);
+}
+function drawPlay(){
+  drawHUD(); drawQueue(); drawBoard(); drawButtons();
+  if(S.flash>0){ ctx.globalAlpha=Math.min(0.5,S.flash); rect(0,0,W,H,C.lred); ctx.globalAlpha=1; }
+  if(S.paused){
+    ctx.globalAlpha=0.7; rect(BX,BY,COLS*CS,ROWS*CS,C.black); ctx.globalAlpha=1;
+    panel(80,250,240,80,C.blue); text('PAUSED',200,278,C.yellow,24,'center'); text('Tap or press P to resume',200,308,C.white,12,'center');
+  }
+}
+function drawTitle(){
+  panel(16,24,368,100,C.black,C.lcyan);
+  pixelText('WALL PIPE',41,42,6,C.lcyan,C.lblue);
+  text('A plumbing homage, 1993-style',200,116,C.lgray,11,'center',false);
+  // demo pipes
+  const demoY=134;
+  panel(16,demoY,368,70,C.black,C.dgray);
+  const seq=['H','SW','NE','H','X','H','SE','NW'];
+  const dx=36;
+  for(let i=0;i<seq.length;i++){ tile(dx+i*40,demoY+12,40); }
+  const wellCell={t:'WELL',out:1,w:{p:1}};
+  const fill=(S.t*0.8)%(seq.length+2);
+  ctx.save();
+  for(let i=0;i<seq.length;i++){
+    const t=['H','H','X','H','H','X','H','H'][i];
+    const cell=t==='X'?{h:{entry:3,p:Math.max(0,Math.min(1,fill-i))},v:null}:{w:{entry:3,p:Math.max(0,Math.min(1,fill-i))}};
+    drawPiece(t,dx+i*40,demoY+12,40,cell);
+  }
+  ctx.restore(); void wellCell;
+  panel(16,212,368,232,C.blue);
+  const lines=[
+    ['HOW TO PLAY',C.yellow],
+    ['Water will gush from the WELL when',C.white],
+    ['the timer runs out. Tap empty wall',C.white],
+    ['squares to lay the NOW pipe. Pieces',C.white],
+    ['can\'t be rotated - plan with the',C.white],
+    ['next 3 shown. Tap a dry pipe to',C.white],
+    ['swap it (-50). Fill enough pipes to',C.white],
+    ['clear the level before it SPLASHES.',C.white],
+    ['Bonus: cross loops, sinks, tubs and',C.lcyan],
+    ['the green OUT drain. Unused pipe -50.',C.lcyan],
+    ['F: Flow now (2x pts)  P: Pause  M: Mute',C.lgreen]
+  ];
+  lines.forEach((l,i)=>text(l[0],200,232+i*20,l[1],i===0?16:12.5,'center',i===0));
+  button(BTN.start, Math.floor(S.t*2)%2?'START':'> START <', false);
+  button(BTN.scores);
+  button({x:100,y:556,w:200,h:32},muted?'SOUND: OFF (M)':'SOUND: ON (M)');
+}
+function drawIntro(){
+  drawHUD(); drawQueue(); drawBoard(); drawButtons();
+  ctx.globalAlpha=0.55; rect(BX,BY,COLS*CS,ROWS*CS,C.black); ctx.globalAlpha=1;
+  panel(40,190,320,200,C.blue);
+  text('LEVEL '+S.level,200,216,C.yellow,24,'center');
+  const L=[
+    'Fill at least '+S.required+' pipes.',
+    'Water in '+S.cdMax+' seconds.',
+    'Flow speed: '+(S.cellTime).toFixed(1)+'s per pipe.'
+  ];
+  if(S.drain) L.push('OUT drain: +2000 (ends round)');
+  if(S.level>=2) L.push('Sinks +300, tubs +600.');
+  if(S.level>=3) L.push('Watch out for bricks!');
+  L.forEach((s,i)=>text(s,200,248+i*20,C.white,13,'center'));
+  text(Math.floor(S.t*2)%2?'TAP TO START':'',200,370,C.lgreen,16,'center');
+}
+function drawTally(){
+  drawHUD(); drawQueue(); drawBoard(); drawButtons();
+  ctx.globalAlpha=0.55; rect(BX,BY,COLS*CS,ROWS*CS,C.black); ctx.globalAlpha=1;
+  const R=S.result;
+  panel(30,180,340,220,R.passed?C.blue:C.red);
+  text(R.passed?'LEVEL '+S.level+' CLEAR!':'NOT ENOUGH PIPE!',200,208,C.yellow,22,'center');
+  text('Pipes filled:  '+R.filled+' / '+R.required,200,246,C.white,14,'center');
+  text('Unused pipes:  '+R.unused+'  (-'+R.pen+')',200,270,R.unused?C.lred:C.white,14,'center');
+  if(R.drain) text('Drain bonus:   +2000',200,294,C.lgreen,14,'center');
+  text('SCORE  '+S.score,200,326,C.lcyan,18,'center');
+  text(R.passed?'Tap for the next level':'Tap to continue',200,370,C.lgreen,14,'center');
+}
+function drawGameOver(){
+  drawHUD(); drawQueue(); drawBoard();
+  ctx.globalAlpha=0.6; rect(0,0,W,H,C.black); ctx.globalAlpha=1;
+  panel(40,200,320,160,C.red);
+  text('GAME OVER',200,236,C.yellow,30,'center');
+  text('Final score '+S.score,200,276,C.white,16,'center');
+  text('Reached level '+S.level,200,300,C.white,14,'center');
+  text('Tap to continue',200,334,C.lgreen,14,'center');
+}
+function drawScores(){
+  panel(30,40,340,520,C.blue);
+  text('HIGH SCORES',200,74,C.yellow,24,'center');
+  text('RANK  NAME   SCORE   LV',200,108,C.lcyan,14,'center');
+  for(let i=0;i<10;i++){
+    const h=hiscores[i]; const y=138+i*30;
+    const col=i===S.newHi&&Math.floor(S.t*4)%2?C.yellow:C.white;
+    const s=h?(String(i+1).padStart(2,' ')+'.  '+h.n.padEnd(3,' ')+'  '+String(h.s).padStart(7,' ')+'  '+String(h.l).padStart(3,' ')):(String(i+1).padStart(2,' ')+'.  '+'---'+'  '+'---'.padStart(7,' ')+'  '+'--'.padStart(3,' '));
+    text(s,200,y,col,15,'center');
+  }
+  text('Tap to return',200,530,C.lgreen,14,'center');
+}
+
+// ---------- loop ----------
+let last=performance.now();
+function update(dt){
+  S.t+=dt;
+  for(const f of S.floats) f.t+=dt*0.8; S.floats=S.floats.filter(f=>f.t<1);
+  if(S.flash>0) S.flash-=dt;
+  if(S.mode!=='play'||S.paused) return;
+  if(S.leak) S.leak.t+=dt;
+  if(S.cool>0) S.cool-=dt;
+  if(S.endTimer>=0){ S.endTimer-=dt; if(S.endTimer<0){ S.endTimer=-1; roundEnd(); } return; }
+  if(!S.flowing){
+    S.countdown-=dt;
+    const t=Math.ceil(S.countdown);
+    if(t!==S.lastTick){ S.lastTick=t; if(t<=5&&t>0) SFX.tick(); }
+    if(S.countdown<=0) startFlow();
+  } else advance(dt);
+}
+function render(){
+  ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=false;
+  if(wallCache) ctx.drawImage(wallCache,0,0);
+  ctx.setTransform(scale,0,0,scale,0,0);
+  switch(S.mode){
+    case 'title': drawTitle(); break;
+    case 'intro': drawIntro(); break;
+    case 'play': drawPlay(); break;
+    case 'tally': drawTally(); break;
+    case 'gameover': drawGameOver(); break;
+    case 'scores': drawScores(); break;
+  }
+}
+function frame(now){
+  const dt=Math.min(0.1,(now-last)/1000); last=now;
+  try{ update(dt); render(); }catch(e){ console.error(e); }
+  requestAnimationFrame(frame);
+}
+resize();
+requestAnimationFrame(frame);
+
+// debug/test hooks (harmless)
+window.__wp={S,setupLevel,layout:{W,H,COLS,ROWS,CS,BX,BY},startFlow:()=>{if(S.mode==='play')startFlow();},PIECES,openings};
+})();
+</script>
+<!--SW-->
+</body>
+</html>
